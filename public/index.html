@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPGA Generator</title>
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons (CDN) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .hat-container { touch-action: none; } /* 모바일 터치 스크롤 방지 */
+    </style>
+</head>
+<body class="bg-orange-50 min-h-screen text-slate-800">
+
+    <!-- Header -->
+    <header class="bg-orange-600 text-white p-4 shadow-lg sticky top-0 z-50">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <div class="bg-white p-1 rounded-full w-9 h-9 flex items-center justify-center overflow-hidden">
+                    <img src="https://raw.githubusercontent.com/0xwhalelabs/MPGA/main/hat2.png" alt="Logo" class="w-full h-full object-contain">
+                </div>
+                <h1 class="text-xl md:text-2xl font-black tracking-tight">MPGA GENERATOR</h1>
+            </div>
+            <p class="text-xs md:text-sm text-orange-100 font-medium">Make $PUP Great Again</p>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto p-4 md:p-8 space-y-8">
+        
+        <!-- Step 1: Upload & Edit -->
+        <section class="space-y-4">
+            <div class="flex items-center space-x-2 text-orange-800 font-bold text-lg">
+                <span class="bg-orange-200 w-8 h-8 rounded-full flex items-center justify-center text-sm">1</span>
+                <h2>사진을 올려주세요 (자동으로 합성됩니다)</h2>
+            </div>
+
+            <!-- Editor Container -->
+            <div id="editor-area" class="relative w-full aspect-[4/3] md:aspect-video bg-white rounded-2xl shadow-inner border-4 border-dashed border-orange-200 overflow-hidden flex items-center justify-center">
+                
+                <!-- Upload Placeholder -->
+                <label id="upload-label" class="cursor-pointer flex flex-col items-center justify-center w-full h-full hover:bg-orange-50 transition-colors">
+                    <i data-lucide="upload" class="w-12 h-12 text-orange-300 mb-2"></i>
+                    <span class="text-orange-400 font-medium">클릭하여 사진 업로드</span>
+                    <input type="file" id="file-input" accept="image/*" class="hidden">
+                </label>
+
+                <!-- Image & Hat Layer (Hidden initially) -->
+                <div id="canvas-layer" class="hidden relative w-full h-full select-none">
+                    <img id="user-image" class="w-full h-full object-contain pointer-events-none" alt="User Image">
+                    
+                    <!-- Hat Element -->
+                    <div id="hat-element" class="absolute cursor-move z-10 origin-center" style="width: 150px; height: 150px; top: 20%; left: 50%; transform: translate(-50%, -50%);">
+                        <img src="https://raw.githubusercontent.com/0xwhalelabs/MPGA/main/hat2.png" class="w-full h-full object-contain drop-shadow-xl pointer-events-none">
+                    </div>
+
+                    <!-- Reset Button -->
+                    <button id="reset-btn" class="absolute top-4 right-4 bg-white/80 p-2 rounded-full shadow hover:bg-white text-gray-600 transition-all z-20">
+                        <i data-lucide="refresh-ccw" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Generate Button -->
+        <div class="flex justify-center pt-2">
+            <button id="generate-btn" disabled class="relative overflow-hidden group px-8 py-4 rounded-full font-bold text-lg shadow-xl transition-all bg-gray-300 text-gray-500 cursor-not-allowed">
+                <div class="flex items-center space-x-3 relative z-10">
+                    <i data-lucide="wand-2" class="w-6 h-6 btn-icon"></i>
+                    <i data-lucide="loader-2" class="w-6 h-6 animate-spin hidden loading-icon"></i>
+                    <span id="btn-text">MPGA! (자연스럽게 만들기)</span>
+                </div>
+            </button>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error-msg" class="hidden flex items-center justify-center space-x-2 text-red-600 bg-red-50 p-4 rounded-xl animate-pulse">
+            <i data-lucide="alert-circle" class="w-5 h-5"></i>
+            <span id="error-text">오류가 발생했습니다.</span>
+        </div>
+
+        <!-- Result Area -->
+        <section id="result-section" class="hidden space-y-4">
+            <div class="flex items-center space-x-2 text-orange-800 font-bold text-lg">
+                <span class="bg-orange-200 w-8 h-8 rounded-full flex items-center justify-center text-sm">2</span>
+                <h2>완성된 결과물</h2>
+            </div>
+            
+            <div class="relative w-full bg-slate-900 rounded-2xl overflow-hidden shadow-2xl ring-4 ring-orange-100">
+                <img id="result-image" class="w-full h-auto block" alt="Result">
+                <div class="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent flex justify-center">
+                    <a id="download-link" href="#" download="mpga-result.jpg" class="flex items-center space-x-2 bg-white text-orange-600 px-6 py-3 rounded-full font-bold shadow-lg hover:bg-orange-50 transition-colors">
+                        <i data-lucide="download" class="w-5 h-5"></i>
+                        <span>이미지 저장하기</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="py-8 text-center text-orange-300 text-sm">Powered by Google Gemini</footer>
+
+    <script>
+        lucide.createIcons();
+
+        // --- Variables ---
+        const HAT_URL = "https://raw.githubusercontent.com/0xwhalelabs/MPGA/main/hat2.png";
+        let isDragging = false;
+        let startX, startY;
+        let hatRect = { x: 50, y: 20 }; // % position
+        let hatSize = 150; // px
+        let imgDisplayRect = { width: 0, height: 0, top: 0, left: 0 }; // Actual image area
+
+        const fileInput = document.getElementById('file-input');
+        const userImgEl = document.getElementById('user-image');
+        const hatEl = document.getElementById('hat-element');
+        const uploadLabel = document.getElementById('upload-label');
+        const canvasLayer = document.getElementById('canvas-layer');
+        const generateBtn = document.getElementById('generate-btn');
+        const editorArea = document.getElementById('editor-area');
+
+        // --- Event Listeners ---
+        fileInput.addEventListener('change', handleUpload);
+        document.getElementById('reset-btn').addEventListener('click', resetApp);
+        
+        // Hat Dragging
+        hatEl.addEventListener('mousedown', startDrag);
+        hatEl.addEventListener('touchstart', startDrag, { passive: false });
+        window.addEventListener('mousemove', onDrag);
+        window.addEventListener('touchmove', onDrag, { passive: false });
+        window.addEventListener('mouseup', endDrag);
+        window.addEventListener('touchend', endDrag);
+        
+        // Hat Resizing (Wheel)
+        hatEl.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            hatSize += e.deltaY < 0 ? 10 : -10;
+            hatSize = Math.max(50, Math.min(400, hatSize));
+            updateHatStyle();
+        });
+
+        // Generate Logic
+        generateBtn.addEventListener('click', async () => {
+            if (generateBtn.disabled) return;
+            setLoading(true);
+            document.getElementById('error-msg').classList.add('hidden');
+            
+            try {
+                const base64 = await createCompositeImage();
+                
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: base64 })
+                });
+
+                if (!response.ok) throw new Error("서버 오류");
+                const data = await response.json();
+                
+                if (data.image) {
+                    const resultImg = document.getElementById('result-image');
+                    resultImg.src = `data:image/jpeg;base64,${data.image}`;
+                    document.getElementById('download-link').href = resultImg.src;
+                    document.getElementById('result-section').classList.remove('hidden');
+                    // Scroll to result
+                    document.getElementById('result-section').scrollIntoView({ behavior: 'smooth' });
+                }
+            } catch (err) {
+                console.error(err);
+                document.getElementById('error-msg').classList.remove('hidden');
+                document.getElementById('error-text').innerText = "이미지 생성 실패 (잠시 후 다시 시도해주세요)";
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        // --- Functions ---
+        function handleUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                userImgEl.src = evt.target.result;
+                uploadLabel.classList.add('hidden');
+                canvasLayer.classList.remove('hidden');
+                
+                // Enable button style
+                generateBtn.disabled = false;
+                generateBtn.className = "relative overflow-hidden group px-8 py-4 rounded-full font-bold text-lg shadow-xl transition-all bg-gradient-to-r from-orange-500 to-red-600 text-white hover:scale-105 hover:shadow-2xl hover:from-orange-400 hover:to-red-500 cursor-pointer";
+
+                // Calculate image position after it loads
+                userImgEl.onload = () => {
+                    calculateImageRect();
+                    // Auto position hat (Center Top)
+                    hatRect = { x: 50, y: 20 }; 
+                    hatSize = imgDisplayRect.width * 0.35; // Auto size
+                    updateHatStyle();
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function calculateImageRect() {
+            // Logic to mimic object-contain
+            const containerW = editorArea.clientWidth;
+            const containerH = editorArea.clientHeight;
+            const imgW = userImgEl.naturalWidth;
+            const imgH = userImgEl.naturalHeight;
+            
+            const containerRatio = containerW / containerH;
+            const imgRatio = imgW / imgH;
+
+            if (imgRatio > containerRatio) {
+                // Image is wider
+                imgDisplayRect.width = containerW;
+                imgDisplayRect.height = containerW / imgRatio;
+                imgDisplayRect.left = 0;
+                imgDisplayRect.top = (containerH - imgDisplayRect.height) / 2;
+            } else {
+                // Image is taller
+                imgDisplayRect.height = containerH;
+                imgDisplayRect.width = containerH * imgRatio;
+                imgDisplayRect.top = 0;
+                imgDisplayRect.left = (containerW - imgDisplayRect.width) / 2;
+            }
+        }
+
+        function updateHatStyle() {
+            // Hat position is stored as % of the IMAGE AREA, not container
+            // Convert % to pixels relative to the image rect
+            const pixelX = imgDisplayRect.left + (imgDisplayRect.width * (hatRect.x / 100));
+            const pixelY = imgDisplayRect.top + (imgDisplayRect.height * (hatRect.y / 100));
+
+            hatEl.style.width = `${hatSize}px`;
+            hatEl.style.height = `${hatSize}px`;
+            hatEl.style.left = `${pixelX}px`;
+            hatEl.style.top = `${pixelY}px`;
+        }
+
+        function startDrag(e) {
+            e.preventDefault();
+            isDragging = true;
+            startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+        }
+
+        function onDrag(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+            const deltaX = clientX - startX;
+            const deltaY = clientY - startY;
+
+            // Convert pixel delta to % delta based on IMAGE width/height
+            const percentDeltaX = (deltaX / imgDisplayRect.width) * 100;
+            const percentDeltaY = (deltaY / imgDisplayRect.height) * 100;
+
+            hatRect.x += percentDeltaX;
+            hatRect.y += percentDeltaY;
+            
+            // Boundary checks (0-100%)
+            hatRect.x = Math.max(0, Math.min(100, hatRect.x));
+            hatRect.y = Math.max(0, Math.min(100, hatRect.y));
+
+            updateHatStyle();
+            
+            startX = clientX;
+            startY = clientY;
+        }
+
+        function endDrag() {
+            isDragging = false;
+        }
+
+        function resetApp() {
+            userImgEl.src = '';
+            uploadLabel.classList.remove('hidden');
+            canvasLayer.classList.add('hidden');
+            document.getElementById('result-section').classList.add('hidden');
+            generateBtn.disabled = true;
+            generateBtn.className = "relative overflow-hidden group px-8 py-4 rounded-full font-bold text-lg shadow-xl transition-all bg-gray-300 text-gray-500 cursor-not-allowed";
+        }
+
+        function setLoading(loading) {
+            const icon = document.querySelector('.btn-icon');
+            const loader = document.querySelector('.loading-icon');
+            const text = document.getElementById('btn-text');
+            
+            if (loading) {
+                icon.classList.add('hidden');
+                loader.classList.remove('hidden');
+                text.innerText = "서버에서 합성 중...";
+                generateBtn.classList.add('cursor-not-allowed');
+            } else {
+                icon.classList.remove('hidden');
+                loader.classList.add('hidden');
+                text.innerText = "MPGA! (자연스럽게 만들기)";
+                generateBtn.classList.remove('cursor-not-allowed');
+            }
+        }
+
+        async function createCompositeImage() {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                img.src = userImgEl.src;
+                
+                img.onload = () => {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+
+                    const hatImg = new Image();
+                    hatImg.crossOrigin = "anonymous";
+                    hatImg.src = HAT_URL;
+                    
+                    hatImg.onload = () => {
+                        // Logic to map screen coordinates to original image coordinates
+                        // ratio = Original Image Width / Displayed Image Width
+                        const scaleFactor = canvas.width / imgDisplayRect.width; 
+
+                        const renderSize = hatSize * scaleFactor;
+                        // Calculate X/Y based on % position on the original image
+                        const renderX = (hatRect.x / 100) * canvas.width - (renderSize / 2);
+                        const renderY = (hatRect.y / 100) * canvas.height - (renderSize / 2);
+
+                        ctx.drawImage(hatImg, renderX, renderY, renderSize, renderSize);
+                        resolve(canvas.toDataURL('image/jpeg', 0.9).split(',')[1]);
+                    };
+                };
+            });
+        }
+        
+        // Window resize handling
+        window.addEventListener('resize', () => {
+            if(userImgEl.src) {
+                calculateImageRect();
+                updateHatStyle();
+            }
+        });
+    </script>
+</body>
+</html>
