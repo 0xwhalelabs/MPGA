@@ -24,23 +24,26 @@ app.post('/api/generate', async (req, res) => {
     }
 
     // --- 프롬프트 수정 핵심 ---
-    // 6번 규칙 추가: 머리 크기에 맞게 모자 크기/각도 조절
+    // 텍스트 내용을 강제하고, 머리 굴곡에 맞춘 자연스러운 합성을 지시합니다.
     const prompt = `
-      This is a photo composite where a red baseball cap with 'MPGA' text has been placed on a person.
-      Your goal is to make this composite look 100% realistic without changing the hat's design.
-      
-      STRICT RULES:
-      1. DO NOT change, blur, or regenerate the 'MPGA' text on the hat. It MUST remain legible and sharp.
-      2. DO NOT change the shape or red color of the hat.
-      3. ONLY adjust the lighting and shadows on the hat to match the person's environment.
-      4. Blend the edges of the hat naturally with the person's hair or head.
-      5. Keep the person's face and background 100% identical to the original.
-      6. Adjust the size, scale, and perspective of the hat slightly to ensure it fits the person's head size and angle perfectly.
-      
-      Output: A high-quality, photorealistic image.
+      TASK: Professional Photo Compositing.
+      INPUT: An image where a red cap is overlaying a person's head.
+      GOAL: Make the hat look 100% naturally worn by the person with specific text.
+
+      CRITICAL REQUIREMENTS (MUST FOLLOW):
+      1. [TEXT ENFORCEMENT]: The text on the front of the hat MUST be clear and readable in exactly two lines:
+         Line 1: MAKE $PUP
+         Line 2: GREAT AGAIN
+         (If the text is blurry or different, FIX it to match this exactly in white bold font).
+      2. [NATURAL FIT & WARP]: The hat must NOT look flat. Visually 'warp' and curve the hat to match the roundness of the person's head.
+      3. [LIGHTING & SHADOWS]: Add realistic contact shadows on the forehead where the hat sits. Match the lighting direction of the scene.
+      4. [COLOR]: Keep the hat RED.
+      5. [PRESERVATION]: Do not change the person's face features or the background.
+
+      SUMMARY: Red hat with text "MAKE $PUP" (top) and "GREAT AGAIN" (bottom), realistically fitted on head.
     `;
 
-    console.log("🚀 Gemini API에 요청 보냄 (프롬프트 강화됨)...");
+    console.log("🚀 Gemini API에 요청 보냄 (프롬프트: 텍스트 지정 & 피팅 강화)...");
     
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
@@ -54,7 +57,7 @@ app.post('/api/generate', async (req, res) => {
               { inlineData: { mimeType: "image/jpeg", data: image } }
             ]
           }],
-          // 텍스트 변형을 막기 위해 이미지 모드 강조
+          // 텍스트 수정을 위해 이미지 모드 사용
           generationConfig: { responseModalities: ["IMAGE"] }
         })
       }
