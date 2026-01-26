@@ -1,93 +1,226 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-require('dotenv').config();
+import 'dotenv/config';
+import express from 'express';
+import multer from 'multer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-app.use(cors());
-app.use(express.json({ limit: '50mb' })); // 이미지 용량 제한 해제
-app.use(express.static('public')); // public 폴더의 html 파일을 보여줌
+app.use(express.json({ limit: '50mb' }));
 
-// Gemini API 호출 라우트
-app.post('/api/generate', async (req, res) => {
-  console.log("📷 이미지 생성 요청 받음");
+const defaultHatUrl = 'https://raw.githubusercontent.com/0xwhalelabs/MPGA/main/hat.png';
+const hatUrl = process.env.HAT_URL || defaultHatUrl;
+let hatCache = null;
+let hatCacheError = null;
+
+async function getHatPngBuffer() {
+  if (hatCache) return hatCache;
+  if (hatCacheError) throw hatCacheError;
 
   try {
-    const { image } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      console.error("❌ 오류: Railway 변수에 GEMINI_API_KEY가 설정되지 않았습니다.");
-      return res.status(500).json({ error: 'Server: API Key not configured' });
+    const res = await fetch(hatUrl);
+    if (!res.ok) {
+      throw new Error(`hat_fetch_failed: ${res.status}`);
     }
+    const arr = await res.arrayBuffer();
+    const buf = Buffer.from(arr);
+    hatCache = buf;
+    return buf;
+  } catch (e) {
+    hatCacheError = e;
+    throw e;
+  }
+}
 
-    // --- 프롬프트 수정 핵심 ---
-    // 기존 모자 제거 및 새 모자 합성 지시를 추가합니다. (RED -> ORANGE 변경)
-    const prompt = `
-      TASK: Professional Photo Compositing & Editing.
-      INPUT: An image where an orange 'MPGA' cap overlay needs to be realistically placed on a person's head.
-      GOAL: The final image must show the person naturally wearing the orange 'MPGA' hat. If the person already has headwear, it MUST be replaced.
-
-      CRITICAL REQUIREMENTS (MUST FOLLOW):
-      1. [EXISTING HEADWEAR REMOVAL]: If the person in the original image is already wearing a hat, cap, beanie, or any other headwear, REMOVE it completely. Reconstruct the hair or head shape naturally underneath where the original item was.
-      2. [PLACEMENT & FIT]: Place the orange 'MPGA' hat realistically onto the (now bare) head. Visually 'warp' and curve the hat to match the head's roundness.
-      3. [TEXT ENFORCEMENT]: The text on the front of the hat MUST be clear and readable in exactly two lines:
-         Line 1: MAKE $PUP
-         Line 2: GREAT AGAIN
-         (Fix blurry text to match this in white bold font).
-      4. [LIGHTING & SHADOWS]: Add realistic contact shadows on the forehead/hair where the new hat sits. Match scene lighting.
-      5. [COLOR]: Keep the hat ORANGE. Do not shift to red or yellow.
-      6. [PRESERVATION]: Do not change the person's face features (below the hat line) or the background.
-
-      SUMMARY: Remove old hat (if any), place orange "MAKE $PUP GREAT AGAIN" hat realistically on head.
-    `;
-
-    console.log("🚀 Gemini API에 요청 보냄 (프롬프트: 오렌지색 모자 교체 지시)...");
-    
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              { inlineData: { mimeType: "image/jpeg", data: image } }
-            ]
-          }],
-          // 텍스트 수정을 위해 이미지 모드 사용
-          generationConfig: { responseModalities: ["IMAGE"] }
-        })
-      }
-    );
-
-    if (!response.ok) {
-        const errText = await response.text();
-        console.error(`❌ Gemini API 응답 오류 (${response.status}):`, errText);
-        throw new Error(`Gemini API Error: ${response.status} ${errText}`);
-    }
-
-    const result = await response.json();
-    console.log("✅ Gemini 응답 성공");
-
-    const candidates = result.candidates?.[0]?.content?.parts;
-    const imagePart = candidates?.find(p => p.inlineData);
-
-    if (imagePart && imagePart.inlineData && imagePart.inlineData.data) {
-      console.log("🖼️ 이미지 데이터 추출 성공");
-      res.json({ success: true, image: imagePart.inlineData.data });
-    } else {
-      console.error("⚠️ 응답에 이미지가 없습니다.");
-      res.status(500).json({ error: 'No image generated in response' });
-    }
-
-  } catch (error) {
-    console.error("🔥 서버 내부 오류:", error);
-    res.status(500).json({ error: error.message });
+app.get('/assets/hat.png', async (req, res) => {
+  try {
+    const buf = await getHatPngBuffer();
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.status(200).send(buf);
+  } catch (e) {
+    return res.status(500).json({ error: 'hat_unavailable', detail: String(e?.message || e) });
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.post('/api/generate', async (req, res) => {
+  try {
+    const { image, mimeType, prompt } = req.body || {};
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Server: API Key not configured' });
+    }
+
+    if (!image) {
+      return res.status(400).json({ error: 'image is required' });
+    }
+
+    const mt = String(mimeType || 'image/jpeg');
+    const model = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash-image');
+    const finalPrompt = String(prompt || '').trim();
+    if (!finalPrompt) {
+      return res.status(400).json({ error: 'prompt is required' });
+    }
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: finalPrompt },
+              { inlineData: { mimeType: mt, data: image } }
+            ]
+          }
+        ],
+        generationConfig: { responseModalities: ['IMAGE'] }
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: 'Gemini API Error', detail: errText });
+    }
+
+    const result = await response.json();
+    const parts = result.candidates?.[0]?.content?.parts || [];
+    const imagePart = parts.find((p) => p?.inlineData?.data);
+
+    if (imagePart?.inlineData?.data) {
+      return res.json({ success: true, image: imagePart.inlineData.data });
+    }
+
+    return res.status(500).json({ error: 'No image generated in response', detail: result });
+  } catch (error) {
+    return res.status(500).json({ error: String(error?.message || error) });
+  }
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+function toBase64(buffer) {
+  return buffer.toString('base64');
+}
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function fallbackPlacement({ width, height }) {
+  const cx = width * 0.5;
+  const cy = height * 0.18;
+  const hatWidth = width * 0.6;
+  const angleDeg = 0;
+  return {
+    centerX: cx,
+    centerY: cy,
+    hatWidth,
+    angleDeg,
+    confidence: 0.2,
+    note: 'fallback'
+  };
+}
+
+async function geminiPlacement({ imageBase64, mimeType, width, height }) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const modelName = String(process.env.GEMINI_MODEL || 'gemini-1.5-flash');
+  const model = genAI.getGenerativeModel({ model: modelName });
+
+  const prompt = `You are an image analysis assistant.
+Return ONLY a minified JSON object with this schema:
+{
+  "centerX": number,
+  "centerY": number,
+  "hatWidth": number,
+  "angleDeg": number,
+  "confidence": number
+}
+
+Goal: place a pre-made hat PNG naturally on the person's head.
+- centerX, centerY are pixel coordinates in the original image.
+- hatWidth is the desired rendered hat width in pixels.
+- angleDeg is clockwise rotation in degrees to match head tilt.
+
+If no face is visible, return confidence 0 and still provide a reasonable guess.
+Image size: width=${width}, height=${height}.
+`;
+
+  const result = await model.generateContent([
+    { text: prompt },
+    {
+      inlineData: {
+        data: imageBase64,
+        mimeType
+      }
+    }
+  ]);
+
+  const text = result.response.text().trim();
+
+  let jsonText = text;
+  const firstBrace = jsonText.indexOf('{');
+  const lastBrace = jsonText.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    jsonText = jsonText.slice(firstBrace, lastBrace + 1);
+  }
+
+  const parsed = JSON.parse(jsonText);
+
+  const centerX = clamp(Number(parsed.centerX), 0, width);
+  const centerY = clamp(Number(parsed.centerY), 0, height);
+  const hatWidth = clamp(Number(parsed.hatWidth), width * 0.15, width * 0.95);
+  const angleDeg = clamp(Number(parsed.angleDeg), -45, 45);
+  const confidence = clamp(Number(parsed.confidence), 0, 1);
+
+  return { centerX, centerY, hatWidth, angleDeg, confidence };
+}
+
+app.post('/api/hat-placement', upload.single('image'), async (req, res) => {
+  try {
+    const { width, height, mimeType } = req.body;
+    if (!req.file) {
+      return res.status(400).json({ error: 'image is required' });
+    }
+
+    const w = Number(width);
+    const h = Number(height);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+      return res.status(400).json({ error: 'width/height are required' });
+    }
+
+    const mt = String(mimeType || req.file.mimetype || 'image/jpeg');
+
+    const imageBase64 = toBase64(req.file.buffer);
+
+    try {
+      const gemini = await geminiPlacement({ imageBase64, mimeType: mt, width: w, height: h });
+      if (gemini) {
+        return res.json({ ...gemini, note: 'gemini' });
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('geminiPlacement_failed', e?.message || e);
+    }
+
+    return res.json(fallbackPlacement({ width: w, height: h }));
+  } catch (err) {
+    return res.status(500).json({ error: 'failed_to_estimate', detail: String(err?.message || err) });
+  }
+});
+
+const port = Number(process.env.PORT || 5177);
+app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`MPGA Generator running on http://localhost:${port}`);
+});
