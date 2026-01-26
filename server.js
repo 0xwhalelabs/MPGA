@@ -1,11 +1,7 @@
-import 'dotenv/config';
-import express from 'express';
-import multer from 'multer';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+require('dotenv').config();
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -132,7 +128,7 @@ async function geminiPlacement({ imageBase64, mimeType, width, height }) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
-  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+  const { GoogleGenerativeAI } = require('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(apiKey);
   const modelName = String(process.env.GEMINI_MODEL || 'gemini-1.5-flash');
   const model = genAI.getGenerativeModel({ model: modelName });
