@@ -4,7 +4,7 @@ const multer = require('multer');
 const path = require('path');
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 app.use(express.json({ limit: '50mb' }));
 
@@ -213,6 +213,19 @@ app.post('/api/hat-placement', upload.single('image'), async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: 'failed_to_estimate', detail: String(err?.message || err) });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (!err) return next();
+
+  if (err?.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'file_too_large', detail: 'Upload image must be <= 25MB.' });
+    }
+    return res.status(400).json({ error: 'upload_failed', detail: String(err.code || err.message || err) });
+  }
+
+  return res.status(500).json({ error: 'internal_error', detail: String(err?.message || err) });
 });
 
 const port = Number(process.env.PORT || 5177);
