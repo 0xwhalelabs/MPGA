@@ -99,6 +99,10 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
+app.get('/health', (req, res) => {
+  return res.status(200).json({ ok: true });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 function toBase64(buffer) {
@@ -229,7 +233,7 @@ app.use((err, req, res, next) => {
 });
 
 const port = Number(process.env.PORT || 5177);
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   // eslint-disable-next-line no-console
   console.log(`MPGA Generator running on http://localhost:${port}`);
 });
